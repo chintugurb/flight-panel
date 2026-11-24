@@ -55,7 +55,7 @@ table{border-collapse:collapse;width:100%;font-size:12.5px}th,td{text-align:left
 </header>
 <nav><button data-t="watches" class="on">Watches</button><button data-t="settings">Airports & settings</button><button data-t="activity">Activity & data health</button></nav>
 <main>
-  <section id="t-watches"><div class="grid" id="cards"></div>
+  <section id="t-watches"><div class="row" id="filters" style="margin-bottom:12px"></div><div class="grid" id="cards"></div>
   <p class="sub" style="margin-top:14px">⚠️ self-transfer: two separate tickets with real cached fares · ≈ estimate: real hub→destination fare + your typical origin→hub fare (the domestic flight is not a specific booking) · all fares are cached from the last ~48 h — confirm before booking.</p></section>
   <section id="t-settings" hidden></section>
   <section id="t-activity" hidden></section>
@@ -66,9 +66,12 @@ table{border-collapse:collapse;width:100%;font-size:12.5px}th,td{text-align:left
 
 <script>
 const AIRPORTS={KNU:"Kanpur",LKO:"Lucknow",DEL:"Delhi",NAG:"Nagpur",JLR:"Jabalpur",RPR:"Raipur",BHO:"Bhopal",IDR:"Indore",VNS:"Varanasi",BOM:"Mumbai",CCU:"Kolkata",BLR:"Bengaluru",HYD:"Hyderabad",MAA:"Chennai",AMD:"Ahmedabad",COK:"Kochi",GOI:"Goa",JAI:"Jaipur",PNQ:"Pune",
+GAU:"Guwahati",IXZ:"Port Blair",IXL:"Leh",IXB:"Bagdogra (Siliguri)",DED:"Dehradun",SXR:"Srinagar",IXC:"Chandigarh",ATQ:"Amritsar",
 BKK:"Bangkok",DMK:"Bangkok DMK",HKT:"Phuket",CNX:"Chiang Mai",HAN:"Hanoi",SGN:"Ho Chi Minh",DAD:"Da Nang",DXB:"Dubai",AUH:"Abu Dhabi",SHJ:"Sharjah",DOH:"Doha",MCT:"Muscat",KUL:"Kuala Lumpur",SIN:"Singapore",DPS:"Bali",CMB:"Colombo",KTM:"Kathmandu",MLE:"Malé",PBH:"Paro",DAC:"Dhaka",HKG:"Hong Kong",NRT:"Tokyo",ICN:"Seoul",IST:"Istanbul",TBS:"Tbilisi",ALA:"Almaty",TAS:"Tashkent",BAK:"Baku",LHR:"London",CDG:"Paris",FRA:"Frankfurt"};
 const INDIA=["KNU","LKO","DEL","NAG","JLR","RPR","BHO","IDR","VNS","BOM","CCU","BLR","HYD","MAA","AMD","JAI","PNQ","GOI","COK"];
-const DESTS=["BKK","HKT","HAN","SGN","DAD","DXB","AUH","SHJ","DOH","MCT","KUL","SIN","DPS","CMB","KTM","MLE","PBH","HKG","NRT","ICN","IST","TBS","ALA","TAS","BAK"];
+const DOMESTIC=["GAU","IXZ","IXL","IXB","DED","SXR","IXC","ATQ","GOI","COK"];
+const INDIA_ALL=new Set([...INDIA,...DOMESTIC]);
+const DESTS=[...DOMESTIC,"BKK","HKT","HAN","SGN","DAD","DXB","AUH","SHJ","DOH","MCT","KUL","SIN","DPS","CMB","KTM","MLE","PBH","HKG","NRT","ICN","IST","TBS","ALA","TAS","BAK"];
 const WD=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 let CFG=null, ST={watches:{},meta:{}}, HIST={};
 const $=s=>document.querySelector(s), dlg=$("#dlg");
@@ -76,7 +79,7 @@ const inr=x=>x==null||x===""?"–":"₹"+Math.round(+x).toLocaleString("en-IN");
 const fmtD=s=>s?new Date(s+"T00:00").toLocaleDateString("en-IN",{weekday:"short",day:"2-digit",month:"short"}):"–";
 const ago=s=>{if(!s)return"never";const m=(Date.now()-new Date(s))/6e4;return m<60?Math.round(m)+" min ago":m<1440?Math.round(m/60)+" h ago":Math.round(m/1440)+" d ago"};
 const mark=o=>o?.kind==="self_transfer"?" ⚠️":o?.kind==="estimate"?" ≈":"";
-const px=o=>o?(o.kind==="estimate"?"≈ ":"")+inr(o.price):"–";
+const px=o=>o?(o.kind==="estimate"?"≈\u00a0":"")+inr(o.price):"–";
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function toast(msg,err){const d=document.createElement("div");d.textContent=msg;if(err)d.className="err";$("#toast").append(d);setTimeout(()=>d.remove(),err?12000:6000)}
 async function api(path,opt={}){const r=await fetch(path,{headers:{"Content-Type":"application/json"},...opt});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||r.statusText);return j}
@@ -131,7 +134,7 @@ const GH={mode:"github",
   repo:()=>LS.get("ft_repo"),token:()=>LS.get("ft_token"),branch:()=>LS.get("ft_branch")||"main",
   ready(){return !!(this.repo()&&this.token())},
   async req(path,opt={},accept="application/vnd.github+json"){
-    const r=await fetch(`https://api.github.com/repos/${this.repo()}/${path}`,{cache:"no-store",...opt,
+    const r=await fetch(`https://api.github.com/repos/${this.repo()}`+(path?"/"+path:""),{cache:"no-store",...opt,
       headers:{Authorization:"Bearer "+this.token(),Accept:accept,"X-GitHub-Api-Version":"2022-11-28",...(opt.body?{"Content-Type":"application/json"}:{})}});
     if(r.status===401)throw new Error("GitHub rejected the token (expired or revoked?) — click 🔑 to enter a new one.");
     return r},
@@ -175,7 +178,7 @@ function showLogin(err){
   $("#dlgF").innerHTML=`<button class="pri" id="l_go">Connect</button>`;
   $("#l_go").onclick=async()=>{LS.set("ft_repo",$("#l_repo").value.trim());LS.set("ft_token",$("#l_tok").value.trim());
     try{const r=await GH.req("");if(!r.ok)throw new Error(r.status===404?"Repo not found, or the token has no access to it.":"GitHub "+r.status);dlg.close();load()}
-    catch(e){$("#l_err").textContent=e.message}};
+    catch(e){$("#l_err").textContent=/fetch/i.test(e.message)?"Could not reach api.github.com from this browser (offline, or a privacy shield / extension is blocking it). Allow api.github.com for this page and try again.":e.message}};
   dlg.showModal();
 }
 function signOut(){if(!confirm("Forget the token in this browser?"))return;LS.set("ft_token","");location.reload()}
@@ -217,10 +220,22 @@ function statusPill(w,e){
   return`<span class="pill ok">ok · ${ago(e.last_run)}</span>`;
 }
 
+let FILTER=LS.get("ft_filter")||"all",QUERY="";
+const isIndia=w=>{const d=(CFG.resolved[w.id]||{}).destinations||[];return d.length>0&&d.every(c=>INDIA_ALL.has(c))};
+function renderFilters(ws){
+  const n={all:ws.length,intl:ws.filter(w=>!isIndia(w)).length,india:ws.filter(isIndia).length};
+  const b=(k,l)=>`<button class="sm ${FILTER===k?"pri":""}" onclick="FILTER='${k}';LS.set('ft_filter','${k}');renderCards()">${l} (${n[k]})</button>`;
+  $("#filters").innerHTML=b("all","All")+b("intl","International")+b("india","India")+
+    `<input id="q" placeholder="Search name or airport…" value="${esc(QUERY)}" style="margin-left:8px;min-width:220px" oninput="QUERY=this.value;renderCards();const q=document.getElementById('q');q.focus();q.setSelectionRange(q.value.length,q.value.length)">`;
+}
 function renderCards(){
   const ws=CFG.raw.watches||[];
+  renderFilters(ws);
   if(!ws.length){$("#cards").innerHTML=`<div class="empty">No watches yet. Click <b>+ New watch</b>.</div>`;return}
-  $("#cards").innerHTML=ws.map((w,i)=>{
+  const q=QUERY.trim().toLowerCase();
+  const show=w=>(FILTER==="all"||(FILTER==="india")===isIndia(w))&&
+    (!q||[w.name,w.id,...((CFG.resolved[w.id]||{}).origins||[]),...((CFG.resolved[w.id]||{}).destinations||[])].join(" ").toLowerCase().includes(q));
+  const html=ws.map((w,i)=>{if(!show(w))return"";
     const e=ST.watches[w.id]||{},res=CFG.resolved[w.id]||{origins:[],destinations:[]},cov=e.coverage||{};
     const covN=Object.values(cov).filter(v=>v>0).length,covT=Object.keys(cov).length;
     const cur=e.current,low=e.low;
@@ -236,6 +251,7 @@ function renderCards(){
       <div class="sub" style="margin:4px 0 8px">${covT?`Routes with fares: ${covN}/${covT}`:""}${cur?.links?.[0]?` · <a href="${esc(cur.links[0])}" target="_blank">Aviasales</a>`:""}${cur?.google?` · <a href="${esc(cur.google)}" target="_blank">Google Flights</a>`:""}</div>
       <div class="row"><button class="sm" onclick="editWatch(${i})">Edit</button><button class="sm" onclick="dispatch('force-run','${w.id}')">Run now</button><button class="sm" onclick="showHistory(${i})">History</button><button class="sm" onclick="togglePause(${i})">${w.enabled===false?"Resume":"Pause"}</button><span class="sp"></span><button class="sm danger" onclick="delWatch(${i})">Delete</button></div>
     </div>`}).join("");
+  $("#cards").innerHTML=html||`<div class="empty">No watches match this filter.</div>`;
 }
 
 async function saveCfg(msg){
